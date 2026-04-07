@@ -164,8 +164,7 @@ class FilterRanker:
             # SNP WARNING flags (không phải FAIL — đã xử lý ở hard filter)
             for flag in pair.snp_flags:
                 if "WARNING" in flag.upper() and "WARNING:snp_warning" not in pair.snp_flags:
-                    if "WARNING:snp_warning" not in pair.snp_flags:
-                        pair.snp_flags.append("WARNING:snp_warning")
+                    pair.snp_flags.append("WARNING:snp_warning")
                     break
 
             # ΔG warning

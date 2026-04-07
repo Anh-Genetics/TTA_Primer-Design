@@ -176,8 +176,15 @@ class ProbeDesigner:
         """
         forward = amplicon[pos : pos + length].upper()
         reverse = _reverse_complement(forward)
-        if forward.count("G") > forward.count("C"):
+        # In a reverse complement: reverse.count("G") == forward.count("C")
+        # So forward.count("G") > forward.count("C") ⟺ G(fwd) > G(rev)
+        g_fwd = forward.count("G")
+        g_rev = reverse.count("G")  # equals forward.count("C")
+        if g_fwd > g_rev:
             return reverse
+        if g_fwd < g_rev:
+            return forward
+        # Equal G count — prefer the strand that does not start with G
         if forward.startswith("G") and not reverse.startswith("G"):
             return reverse
         return forward

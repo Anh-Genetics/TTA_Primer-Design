@@ -64,9 +64,12 @@ class SequencePreprocessor:
 
         self.validate_sequence(sequence)
         gc_content = self.calculate_gc_content(sequence)
-        complexity_score = len({sequence[i : i + 3] for i in range(len(sequence) - 2)}) / max(
-            1, len(sequence) - 2
-        )
+        n = len(sequence)
+        if n >= 3:
+            kmers = {sequence[i : i + 3] for i in range(n - 2)}
+            complexity_score = len(kmers) / (n - 2)
+        else:
+            complexity_score = 0.0
         return ProcessedSequence(
             sequence=sequence,
             excluded_regions=list(target.region_exclude or []),

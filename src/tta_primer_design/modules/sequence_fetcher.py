@@ -15,6 +15,7 @@ TODO (Sprint 1):
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from tta_primer_design.config import AppConfig
@@ -64,8 +65,6 @@ class SequenceFetcher:
         last_exc: Exception | None = None
         for attempt in range(self.config.ncbi.retries):
             try:
-                import time
-
                 if attempt > 0:
                     time.sleep(min(2**attempt, 30))
                 handle = Entrez.efetch(
@@ -112,8 +111,6 @@ class SequenceFetcher:
         last_exc: Exception | None = None
         for attempt in range(self.config.ncbi.retries):
             try:
-                import time
-
                 if attempt > 0:
                     time.sleep(min(2**attempt, 30))
                 handle = Entrez.efetch(db="nucleotide", id=accession, rettype="gb", retmode="text")

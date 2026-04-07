@@ -118,7 +118,7 @@ class FilterRanker:
             Danh sách với flags đã được gán.
         """
         for pair in pairs:
-            if any("WARNING" in flag and "HAIRPIN" not in flag for flag in pair.snp_flags):
+            if any(flag.startswith("SNP_") for flag in pair.snp_flags):
                 if "SNP_WARNING" not in pair.snp_flags:
                     pair.snp_flags.append("SNP_WARNING")
             for oligo in (pair.left_primer, pair.right_primer):

@@ -136,9 +136,13 @@ class ProbeDesigner:
                             sequence=probe_seq,
                             start=pair.left_primer.start + pos,
                             tm=tm,
-                            gc_percent=(probe_seq.count("G") + probe_seq.count("C"))
-                            / len(probe_seq)
-                            * 100.0,
+                            gc_percent=(
+                                (probe_seq.count("G") + probe_seq.count("C"))
+                                / len(probe_seq)
+                                * 100.0
+                                if probe_seq
+                                else 0.0
+                            ),
                         )
         return best_probe
 

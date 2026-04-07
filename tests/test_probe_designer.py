@@ -103,7 +103,7 @@ class TestCalculateProbeTm:
 
     def test_higher_gc_higher_tm(self, designer: ProbeDesigner) -> None:
         tm_gc = designer.calculate_probe_tm("GCGCGCGCGCGCGCGCGCGC", {})
-        tm_at = designer.calculate_probe_tm("ATATATATATATATATATAN".replace("N", "A"), {})
+        tm_at = designer.calculate_probe_tm("ATATATATATATATATATAT", {})
         assert tm_gc > tm_at
 
     def test_custom_params(self, designer: ProbeDesigner) -> None:

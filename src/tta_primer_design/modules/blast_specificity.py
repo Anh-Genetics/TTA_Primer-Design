@@ -31,6 +31,12 @@ _BLAST_POLL_INTERVAL = 10  # seconds between status polls
 _BLAST_MAX_WAIT = 180  # max seconds to wait per BLAST job
 _MAX_OFFTARGET_AMPLICON_SIZE = 3000  # bp
 
+# Specificity scoring constants
+_OFFTARGET_PENALTY_PER_AMPLICON = 25.0  # score penalty per off-target amplicon
+_MIN_SCORE_WITH_HITS = 80.0  # minimum score floor when many non-specific hits
+_HIT_THRESHOLD = 10  # total hit count above which minor penalty applies
+_HIT_PENALTY = 0.5  # score penalty per extra hit above threshold
+
 
 @dataclass
 class BlastHit:
@@ -511,13 +517,13 @@ class BlastSpecificity:
         """
         if off_targets:
             # Each off-target amplicon reduces score significantly
-            penalty = min(len(off_targets) * 25.0, 100.0)
+            penalty = min(len(off_targets) * _OFFTARGET_PENALTY_PER_AMPLICON, 100.0)
             return max(0.0, 100.0 - penalty)
 
         # Minor penalty for many non-specific hits
         total_hits = n_left_hits + n_right_hits
-        if total_hits > 10:
-            return max(80.0, 100.0 - (total_hits - 10) * 0.5)
+        if total_hits > _HIT_THRESHOLD:
+            return max(_MIN_SCORE_WITH_HITS, 100.0 - (total_hits - _HIT_THRESHOLD) * _HIT_PENALTY)
 
         return 100.0
 

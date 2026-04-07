@@ -480,7 +480,6 @@ def _extract_oligo_data(cells: list[str]) -> dict[str, str]:
     data: dict[str, str] = {}
 
     for cell in cells:
-        upper = cell.upper()
         # DNA sequence: only ACGTacgt and length 10-40
         if re.match(r"^[ACGTacgt]{10,40}$", cell):
             data["sequence"] = cell.upper()
@@ -494,6 +493,5 @@ def _extract_oligo_data(cells: list[str]) -> dict[str, str]:
             data["gc"] = cell.rstrip("%")
         elif re.match(r"^\d+$", cell) and "start" not in data and int(cell) < 10000:
             data["start"] = cell
-        _ = upper  # suppress unused variable warning
 
     return data

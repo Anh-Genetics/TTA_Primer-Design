@@ -112,8 +112,7 @@ class TestConstants:
     """Test class constants and initialization."""
 
     def test_base_url(self, api: NCBIPrimerBlast) -> None:
-        assert "ncbi.nlm.nih.gov" in api.BASE_URL
-        assert "primer-blast" in api.BASE_URL
+        assert api.BASE_URL == "https://www.ncbi.nlm.nih.gov/tools/primer-blast/primertool.cgi"
 
     def test_poll_interval(self, api: NCBIPrimerBlast) -> None:
         assert api.POLL_INTERVAL > 0

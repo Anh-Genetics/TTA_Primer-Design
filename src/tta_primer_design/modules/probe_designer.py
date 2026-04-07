@@ -165,10 +165,11 @@ class ProbeDesigner:
                 candidate_seq = self.select_best_strand(amplicon, pos, probe_len)
                 tm = self.calculate_probe_tm(candidate_seq, params)
 
+                # Fail fast on absolute Tm range before checking delta
+                if not (_PROBE_TM_MIN <= tm <= _PROBE_TM_MAX):
+                    continue
                 # Tm probe must exceed avg primer Tm by at least _PROBE_TM_DELTA
                 if tm < avg_primer_tm + _PROBE_TM_DELTA:
-                    continue
-                if not (_PROBE_TM_MIN <= tm <= _PROBE_TM_MAX):
                     continue
 
                 gc = _gc_percent(candidate_seq)

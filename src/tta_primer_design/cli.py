@@ -177,6 +177,20 @@ def run_command(
     help="File YAML config (tuỳ chọn).",
 )
 @click.option(
+    "--plot",
+    "show_plot",
+    is_flag=True,
+    default=False,
+    help="In ASCII visualization của kết quả BLAST ra console.",
+)
+@click.option(
+    "--plot-output",
+    "plot_output",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Lưu biểu đồ matplotlib PNG ra đường dẫn này (ví dụ: results/blast_plot.png).",
+)
+@click.option(
     "--log-level",
     default="WARNING",
     show_default=True,
@@ -193,6 +207,8 @@ def evaluate_command(
     skip_blast: bool,
     output_file: Path | None,
     config_path: Path | None,
+    show_plot: bool,
+    plot_output: Path | None,
     log_level: str,
 ) -> None:
     """Đánh giá nhiệt động học và kiểm tra BLAST cho một cặp mồi sẵn có.
@@ -373,6 +389,22 @@ def evaluate_command(
                 click.echo("\n  Off-target amplicons : 0  ✅")
 
             click.echo(f"  Specificity score    : {spec_result.specificity_score:.1f} / 100")
+
+            # ── Visualization ────────────────────────────────────────
+            if show_plot or plot_output is not None:
+                try:
+                    from tta_primer_design.modules.blast_visualizer import BlastVisualizer
+
+                    viz = BlastVisualizer(spec_result, pair_name)
+                    if show_plot:
+                        viz.print_ascii_chart()
+                    if plot_output is not None:
+                        saved = viz.save_plot(plot_output)
+                        click.echo(f"  📊 Biểu đồ đã lưu: {saved}")
+                except ImportError as exc:
+                    click.echo(f"  ⚠️  {exc}", err=True)
+                except Exception as exc:  # noqa: BLE001
+                    click.echo(f"  ⚠️  Lỗi visualization: {exc}", err=True)
 
         except ImportError:
             click.echo("  ⚠️  biopython chưa được cài — bỏ qua BLAST.")

@@ -392,17 +392,19 @@ def evaluate_command(
 
             # ── Visualization ────────────────────────────────────────
             if show_plot or plot_output is not None:
-                from tta_primer_design.modules.blast_visualizer import BlastVisualizer
+                try:
+                    from tta_primer_design.modules.blast_visualizer import BlastVisualizer
 
-                viz = BlastVisualizer(spec_result, pair_name)
-                if show_plot:
-                    viz.print_ascii_chart()
-                if plot_output is not None:
-                    try:
+                    viz = BlastVisualizer(spec_result, pair_name)
+                    if show_plot:
+                        viz.print_ascii_chart()
+                    if plot_output is not None:
                         saved = viz.save_plot(plot_output)
                         click.echo(f"  📊 Biểu đồ đã lưu: {saved}")
-                    except ImportError as exc:
-                        click.echo(f"  ⚠️  {exc}", err=True)
+                except ImportError as exc:
+                    click.echo(f"  ⚠️  {exc}", err=True)
+                except Exception as exc:  # noqa: BLE001
+                    click.echo(f"  ⚠️  Lỗi visualization: {exc}", err=True)
 
         except ImportError:
             click.echo("  ⚠️  biopython chưa được cài — bỏ qua BLAST.")

@@ -182,8 +182,6 @@ class BlastVisualizer:
 
         n_subplots = 3 if has_off_target else 2
         fig, axes = plt.subplots(1, n_subplots, figsize=(6 * n_subplots, 5))
-        if n_subplots == 1:
-            axes = [axes]
 
         fig.suptitle(f"BLAST Specificity — {self.pair_name}", fontsize=13, fontweight="bold")
 

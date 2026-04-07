@@ -183,7 +183,7 @@ tta-primer-design evaluate \
 | Hetero-dimer ΔG | > −9 kcal/mol | ≤ −9 kcal/mol |
 | Off-target amplicons | 0 | ≥ 1 |
 | Specificity score | ≥ 80 | < 80 |
-| Overall score | ≥ 70 (PASS) | 50–70 (MARGINAL) | < 50 (FAIL) |
+| Overall score | ≥ 70 (PASS) | 50–70 (MARGINAL) hoặc < 50 (FAIL) |
 
 ---
 

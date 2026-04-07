@@ -262,9 +262,10 @@ def _find_off_target_amplicons(
     for subject_id in set(left_fwd) & set(right_rev):
         for lhit in left_fwd[subject_id]:
             for rhit in right_rev[subject_id]:
-                left_pos = lhit.subject_start
-                # sbjct_end nhỏ hơn sbjct_start khi là minus-strand
-                right_pos = rhit.subject_end
+                left_pos = lhit.subject_start  # 5' end of left primer (lower coord)
+                # On reverse strand, subject_start > subject_end; subject_start is
+                # the 5' end of the right primer in genomic coordinates (higher coord).
+                right_pos = rhit.subject_start
                 if right_pos > left_pos:
                     amp_size = right_pos - left_pos + 1
                     if amp_size <= max_size:

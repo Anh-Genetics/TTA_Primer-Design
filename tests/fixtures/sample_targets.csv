@@ -1,0 +1,4 @@
+id,accession,organism,design_mode,exon_junction
+ACTB,NM_001101,Homo sapiens,qpcr,true
+GAPDH,NM_002046,Homo sapiens,qpcr,false
+TP53,NM_000546,Homo sapiens,taqman,true

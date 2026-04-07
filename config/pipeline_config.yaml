@@ -1,0 +1,35 @@
+pipeline:
+  name: "Primer_Probe_Design_Pipeline"
+  version: "0.1.0"
+  mode: "qpcr"              # pcr | qpcr | taqman | sybr | multiplex
+  use_local_primer3: true   # true = dùng primer3-py; false = NCBI Primer-BLAST API
+  top_n_pairs: 5            # Số primer pairs tốt nhất trả về mỗi target
+
+ncbi:
+  email: "your@email.com"   # BẮT BUỘC cho E-utilities
+  api_key: ""               # Tuỳ chọn — tăng rate limit lên 10 req/s
+  retries: 3
+  timeout: 120
+  rate_limit: 3             # requests/second (không có API key)
+
+blast:
+  database: "refseq_rna"    # refseq_rna | refseq_genomic | nt | nr
+  organism: "Homo sapiens"
+  max_targets: 500
+  word_size: 7
+  evalue: 1000
+  num_threads: 4
+
+output:
+  formats:
+    - "csv"
+    - "xlsx"
+    - "json"
+  include_plots: false      # Đặt true khi cần báo cáo trực quan
+
+filters:
+  min_specificity_score: 80
+  max_off_targets: 0
+  require_exon_junction: false
+  avoid_snp_in_primer: true
+  avoid_snp_in_probe: true

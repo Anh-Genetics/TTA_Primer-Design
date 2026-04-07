@@ -51,11 +51,31 @@ class SequencePreprocessor:
 
         Returns:
             ProcessedSequence sẵn sàng cho Primer3.
-
-        Raises:
-            NotImplementedError: Chưa implement đầy đủ (Sprint 2).
         """
-        raise NotImplementedError("process chưa được implement (Sprint 2)")
+        try:
+            from Bio.SeqRecord import SeqRecord
+
+            if isinstance(seq_record, SeqRecord):
+                sequence = str(seq_record.seq).upper()
+            else:
+                sequence = str(seq_record).upper()
+        except ImportError:
+            sequence = str(seq_record).upper()
+
+        self.validate_sequence(sequence)
+        gc_content = self.calculate_gc_content(sequence)
+        complexity_score = len({sequence[i : i + 3] for i in range(len(sequence) - 2)}) / max(
+            1, len(sequence) - 2
+        )
+        return ProcessedSequence(
+            sequence=sequence,
+            excluded_regions=list(target.region_exclude or []),
+            target_regions=[],
+            included_region=target.region_include,
+            exon_junctions=[],
+            gc_content=gc_content,
+            complexity_score=complexity_score,
+        )
 
     def validate_sequence(self, sequence: str) -> bool:
         """Kiểm tra sequence chỉ chứa các base hợp lệ (ATCGN).
@@ -104,8 +124,12 @@ class SequencePreprocessor:
 
         Returns:
             Chuỗi đã mask.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("mask_low_complexity chưa được implement (Sprint 2)")
+        seq = list(sequence)
+        for i in range(len(seq) - window + 1):
+            chunk = sequence[i : i + window].upper()
+            max_freq = max(chunk.count(b) for b in "ACGT")
+            if max_freq / window > threshold:
+                for j in range(i, i + window):
+                    seq[j] = "N"
+        return "".join(seq)

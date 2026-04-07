@@ -30,10 +30,20 @@ TODO (Sprint 2):
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
+
+import primer3
 
 from tta_primer_design.config import AppConfig
 from tta_primer_design.models import Oligo, PrimerPair
+
+_COMPLEMENT = str.maketrans("ATCGatcg", "TAGCtagc")
+
+
+def _reverse_complement(seq: str) -> str:
+    return seq.translate(_COMPLEMENT)[::-1]
+
 
 logger = logging.getLogger("tta_primer_design.modules.thermodynamics")
 
@@ -88,11 +98,20 @@ class Thermodynamics:
 
         Returns:
             PrimerPair đã được cập nhật thông tin nhiệt động học.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("validate_all chưa được implement (Sprint 2)")
+        for pair in primer_pairs:
+            for oligo in (pair.left_primer, pair.right_primer):
+                profile = self.full_thermodynamic_profile(oligo)
+                oligo.tm = profile.tm
+                oligo.gc_percent = profile.gc_percent
+                seq = oligo.sequence.upper()
+                oligo.hairpin_th = primer3.calc_hairpin(seq).tm
+                oligo.self_any_th = primer3.calc_homodimer(seq).tm
+            if pair.probe is not None:
+                probe_profile = self.full_thermodynamic_profile(pair.probe)
+                pair.probe.tm = probe_profile.tm
+                pair.probe.gc_percent = probe_profile.gc_percent
+        return primer_pairs
 
     def calculate_tm(self, sequence: str, params: dict | None = None) -> float:
         """Tính Tm (SantaLucia 1998).
@@ -103,11 +122,15 @@ class Thermodynamics:
 
         Returns:
             Tm (°C).
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("calculate_tm chưa được implement (Sprint 2)")
+        seq = sequence.upper()
+        return primer3.calc_tm(
+            seq,
+            mv_conc=50.0,
+            dv_conc=1.5,
+            dntp_conc=0.6,
+            dna_conc=250.0,
+        )
 
     def calculate_hairpin_dg(self, sequence: str) -> float:
         """Tính ΔG cấu trúc hairpin.
@@ -117,11 +140,9 @@ class Thermodynamics:
 
         Returns:
             ΔG hairpin (kcal/mol). Âm = có hairpin.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("calculate_hairpin_dg chưa được implement (Sprint 2)")
+        seq = sequence.upper()
+        return primer3.calc_hairpin(seq).dg / 1000.0
 
     def calculate_dimer_dg(self, seq1: str, seq2: str) -> float:
         """Tính ΔG hetero-dimer giữa 2 oligo.
@@ -132,11 +153,10 @@ class Thermodynamics:
 
         Returns:
             ΔG dimer (kcal/mol).
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("calculate_dimer_dg chưa được implement (Sprint 2)")
+        s1 = seq1.upper()
+        s2 = seq2.upper()
+        return primer3.calc_heterodimer(s1, s2).dg / 1000.0
 
     def check_gc_clamp(
         self, sequence: str, window: int = 5, min_gc: int = 1, max_gc: int = 3
@@ -151,11 +171,11 @@ class Thermodynamics:
 
         Returns:
             True nếu GC clamp hợp lệ.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("check_gc_clamp chưa được implement (Sprint 2)")
+        seq = sequence.upper()
+        tail = seq[-window:]
+        count = tail.count("G") + tail.count("C")
+        return min_gc <= count <= max_gc
 
     def check_repeat_runs(self, sequence: str, max_run: int = 4) -> bool:
         """Kiểm tra không có repeat runs quá dài.
@@ -166,11 +186,9 @@ class Thermodynamics:
 
         Returns:
             True nếu không có repeat runs > max_run.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("check_repeat_runs chưa được implement (Sprint 2)")
+        seq = sequence.upper()
+        return re.search(rf"(.)\1{{{max_run},}}", seq) is None
 
     def full_thermodynamic_profile(self, oligo: Oligo) -> ThermoProfile:
         """Tính toán đầy đủ profile nhiệt động học cho một oligo.
@@ -180,8 +198,26 @@ class Thermodynamics:
 
         Returns:
             ThermoProfile.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
         """
-        raise NotImplementedError("full_thermodynamic_profile chưa được implement (Sprint 2)")
+        seq = oligo.sequence.upper()
+        tm = self.calculate_tm(seq)
+        gc_count = seq.count("G") + seq.count("C")
+        gc_percent = (gc_count / len(seq) * 100.0) if seq else 0.0
+        hairpin_dg = self.calculate_hairpin_dg(seq)
+        self_dimer_dg = primer3.calc_homodimer(seq).dg / 1000.0
+        rc_tail = _reverse_complement(seq[-5:])
+        end_stability_dg = primer3.calc_end_stability(seq[-5:], rc_tail).dg / 1000.0
+        gc_clamp_ok = self.check_gc_clamp(seq)
+        repeat_ok = self.check_repeat_runs(seq)
+        pass_all = gc_clamp_ok and repeat_ok and hairpin_dg > -9.0 and self_dimer_dg > -9.0
+        return ThermoProfile(
+            sequence=oligo.sequence,
+            tm=tm,
+            gc_percent=gc_percent,
+            hairpin_dg=hairpin_dg,
+            self_dimer_dg=self_dimer_dg,
+            end_stability_dg=end_stability_dg,
+            gc_clamp_ok=gc_clamp_ok,
+            repeat_ok=repeat_ok,
+            pass_all=pass_all,
+        )

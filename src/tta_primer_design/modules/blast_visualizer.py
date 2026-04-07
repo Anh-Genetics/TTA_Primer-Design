@@ -220,7 +220,9 @@ class BlastVisualizer:
         ax2.set_xlabel("Hit index")
         ax2.set_ylabel("-log₁₀(E-value)")
         ax2.set_title("BLAST hit E-values")
-        ax2.legend()
+        handles, labels = ax2.get_legend_handles_labels()
+        if handles:
+            ax2.legend(handles, labels)
 
         # ── Subplot 3: off-target amplicon sizes (nếu có) ─────────────
         if has_off_target:

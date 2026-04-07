@@ -10,12 +10,7 @@ Luồng:
     2. Merge với custom_params từ DesignTarget
     3. Gọi ``primer3.bindings.design_primers()``
     4. Parse output thành List[PrimerPair]
-    5. Xử lý lỗi: không tìm được primer, constraint quá chặt
-
-TODO (Sprint 2):
-    - Implement ``run()``
-    - Implement ``_parse_primer3_output()``
-    - Implement auto-relax constraints nếu không tìm được primer
+    5. Xử lý lỗi: không tìm được primer, constraint quá chặt → auto-relax
 """
 
 from __future__ import annotations
@@ -27,7 +22,7 @@ from typing import Any
 import yaml
 
 from tta_primer_design.config import AppConfig
-from tta_primer_design.models import DesignTarget, PrimerPair, ProcessedSequence
+from tta_primer_design.models import DesignTarget, Oligo, PrimerPair, ProcessedSequence
 
 logger = logging.getLogger("tta_primer_design.modules.primer3_runner")
 
@@ -39,6 +34,13 @@ _MODE_TO_CONFIG_FILE: dict[str, str] = {
     "sybr": "primer3_pcr_params.yaml",
     "multiplex": "primer3_pcr_params.yaml",
 }
+
+# Các tham số được nới lỏng khi không tìm được primer (auto-relax)
+_RELAX_STEPS: list[dict[str, Any]] = [
+    {"PRIMER_MIN_TM": 2.0, "PRIMER_MAX_TM": 2.0, "PRIMER_PAIR_MAX_DIFF_TM": 1.0},
+    {"PRIMER_MIN_SIZE": -2, "PRIMER_MAX_SIZE": 2},
+    {"PRIMER_MIN_GC": -5.0, "PRIMER_MAX_GC": 5.0},
+]
 
 
 class Primer3Runner:
@@ -89,23 +91,83 @@ class Primer3Runner:
     ) -> list[PrimerPair]:
         """Chạy Primer3 và trả về danh sách PrimerPair.
 
+        Luồng:
+            1. Load global params từ YAML.
+            2. Merge với target.custom_params (nếu có).
+            3. Build seq_args từ processed_seq.
+            4. Gọi primer3.design_primers().
+            5. Nếu không có kết quả → thử auto-relax constraints (tối đa len(_RELAX_STEPS) lần).
+            6. Parse và trả về danh sách PrimerPair.
+
         Args:
             processed_seq: Sequence đã tiền xử lý.
             target: DesignTarget (chứa custom_params nếu có).
 
         Returns:
-            Danh sách PrimerPair từ Primer3.
+            Danh sách PrimerPair từ Primer3 (có thể rỗng nếu không tìm được).
 
         Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
             ImportError: Nếu primer3-py chưa được cài.
         """
         try:
-            import primer3  # noqa: F401
+            import primer3
         except ImportError as exc:
             raise ImportError("primer3-py chưa được cài. Chạy: pip install primer3-py") from exc
 
-        raise NotImplementedError("Primer3Runner.run() chưa được implement (Sprint 2)")
+        global_args = self.load_primer3_params()
+
+        # Merge với custom_params của target
+        if target.custom_params:
+            global_args.update(target.custom_params)
+
+        # Giới hạn số lượng pair trả về theo config
+        global_args.setdefault("PRIMER_NUM_RETURN", self.config.pipeline.top_n_pairs)
+
+        seq_args = self._build_seq_args(processed_seq, target)
+
+        try:
+            result = primer3.design_primers(seq_args=seq_args, global_args=global_args)
+        except OSError as exc:
+            logger.warning(
+                "Primer3 lỗi cho target '%s': %s — trả về danh sách rỗng.",
+                target.target_id,
+                exc,
+            )
+            return []
+        num_returned = result.get("PRIMER_PAIR_NUM_RETURNED", 0)
+
+        # Auto-relax nếu không tìm được primer
+        if num_returned == 0:
+            relaxed_args = dict(global_args)
+            for step in _RELAX_STEPS:
+                relaxed_args = _apply_relax_step(relaxed_args, step)
+                try:
+                    result = primer3.design_primers(seq_args=seq_args, global_args=relaxed_args)
+                except OSError as exc:
+                    logger.warning(
+                        "Primer3 lỗi khi auto-relax cho target '%s': %s",
+                        target.target_id,
+                        exc,
+                    )
+                    break
+                num_returned = result.get("PRIMER_PAIR_NUM_RETURNED", 0)
+                if num_returned > 0:
+                    logger.info(
+                        "Auto-relax thành công sau khi nới lỏng constraints cho target '%s': "
+                        "%d pairs",
+                        target.target_id,
+                        num_returned,
+                    )
+                    break
+            else:
+                logger.warning(
+                    "Không tìm được primer cho target '%s' sau khi auto-relax.",
+                    target.target_id,
+                )
+
+        pairs = self._parse_primer3_output(result, target.target_id)
+        logger.debug("Primer3 trả về %d pair(s) cho target '%s'", len(pairs), target.target_id)
+        return pairs
 
     def _build_seq_args(
         self,
@@ -144,9 +206,94 @@ class Primer3Runner:
             target_id: ID target để đặt tên pair.
 
         Returns:
-            Danh sách PrimerPair.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 2).
+            Danh sách PrimerPair (rỗng nếu PRIMER_PAIR_NUM_RETURNED == 0).
         """
-        raise NotImplementedError("_parse_primer3_output chưa được implement (Sprint 2)")
+        num_returned = result.get("PRIMER_PAIR_NUM_RETURNED", 0)
+        if not num_returned:
+            return []
+
+        pairs: list[PrimerPair] = []
+        for i in range(num_returned):
+            left = _parse_oligo(result, "LEFT", i)
+            right = _parse_oligo(result, "RIGHT", i)
+            if left is None or right is None:
+                continue
+
+            probe: Oligo | None = None
+            if f"PRIMER_INTERNAL_{i}_SEQUENCE" in result or f"PRIMER_INTERNAL_{i}" in result:
+                probe = _parse_oligo(result, "INTERNAL", i)
+
+            amplicon_size = result.get(f"PRIMER_PAIR_{i}_PRODUCT_SIZE", 0)
+            pair_penalty = result.get(f"PRIMER_PAIR_{i}_PENALTY", 0.0)
+
+            pair = PrimerPair(
+                pair_id=f"{target_id}_pair_{i}",
+                left_primer=left,
+                right_primer=right,
+                probe=probe,
+                amplicon_size=int(amplicon_size),
+                pair_penalty=float(pair_penalty),
+            )
+            pairs.append(pair)
+
+        return pairs
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_oligo(result: dict[str, Any], side: str, idx: int) -> Oligo | None:
+    """Parse một oligo từ kết quả primer3-py.
+
+    Args:
+        result: Dict kết quả từ primer3.
+        side: "LEFT", "RIGHT", hoặc "INTERNAL".
+        idx: Index của pair.
+
+    Returns:
+        Oligo hoặc None nếu không có dữ liệu.
+    """
+    prefix = f"PRIMER_{side}_{idx}"
+    seq_key = f"{prefix}_SEQUENCE"
+    pos_key = f"PRIMER_{side}_{idx}"  # same key, value = [start, length]
+
+    sequence = result.get(seq_key, "")
+    if not sequence:
+        return None
+
+    position = result.get(pos_key, [0, len(sequence)])
+    start = int(position[0]) if isinstance(position, (list, tuple)) else 0
+
+    return Oligo(
+        sequence=str(sequence),
+        start=start,
+        tm=float(result.get(f"{prefix}_TM", 0.0)),
+        gc_percent=float(result.get(f"{prefix}_GC_PERCENT", 0.0)),
+        self_any_th=float(result.get(f"{prefix}_SELF_ANY_TH", 0.0)),
+        self_end_th=float(result.get(f"{prefix}_SELF_END_TH", 0.0)),
+        hairpin_th=float(result.get(f"{prefix}_HAIRPIN_TH", 0.0)),
+        end_stability=float(result.get(f"{prefix}_END_STABILITY", 0.0)),
+        penalty=float(result.get(f"{prefix}_PENALTY", 0.0)),
+    )
+
+
+def _apply_relax_step(params: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+    """Nới lỏng constraints theo một bước relax.
+
+    Giá trị dương trong step → trừ vào MIN / cộng vào MAX.
+    Tên key dùng quy ước: MIN_* giảm, MAX_* tăng, DIFF_* tăng.
+    """
+    relaxed = dict(params)
+    for key, delta in step.items():
+        if key.startswith("PRIMER_MIN_") or key.startswith("PRIMER_INTERNAL_MIN_"):
+            if key in relaxed:
+                relaxed[key] = relaxed[key] - abs(delta)
+        elif key.startswith("PRIMER_MAX_") or key.startswith("PRIMER_INTERNAL_MAX_"):
+            if key in relaxed:
+                relaxed[key] = relaxed[key] + abs(delta)
+        elif "DIFF" in key or "PAIR_MAX" in key:
+            if key in relaxed:
+                relaxed[key] = relaxed[key] + abs(delta)
+    return relaxed

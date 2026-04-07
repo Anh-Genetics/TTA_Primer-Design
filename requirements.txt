@@ -1,0 +1,21 @@
+# Core
+biopython>=1.81
+click>=8.1
+pyyaml>=6.0
+requests>=2.31
+pandas>=2.0
+numpy>=1.24
+openpyxl>=3.1
+jinja2>=3.1
+beautifulsoup4>=4.12
+lxml>=4.9
+primer3-py>=2.0.0
+
+# Development / testing
+pytest>=7.4
+pytest-cov>=4.1
+ruff>=0.4
+black>=24.0
+mypy>=1.5
+types-PyYAML
+types-requests

@@ -1,0 +1,34 @@
+# Minimal pipeline config for testing
+pipeline:
+  name: "Test_Pipeline"
+  version: "0.1.0"
+  mode: "qpcr"
+  use_local_primer3: true
+  top_n_pairs: 3
+
+ncbi:
+  email: "test@example.com"
+  api_key: ""
+  retries: 1
+  timeout: 30
+  rate_limit: 3
+
+blast:
+  database: "refseq_rna"
+  organism: "Homo sapiens"
+  max_targets: 100
+  word_size: 7
+  evalue: 1000
+  num_threads: 1
+
+output:
+  formats:
+    - "json"
+  include_plots: false
+
+filters:
+  min_specificity_score: 80
+  max_off_targets: 0
+  require_exon_junction: false
+  avoid_snp_in_primer: true
+  avoid_snp_in_probe: true

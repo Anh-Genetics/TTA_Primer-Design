@@ -1,0 +1,18 @@
+{
+  "targets": [
+    {
+      "id": "ACTB",
+      "accession": "NM_001101",
+      "organism": "Homo sapiens",
+      "design_mode": "qpcr",
+      "exon_junction": true
+    },
+    {
+      "id": "TP53",
+      "accession": "NM_000546",
+      "organism": "Homo sapiens",
+      "design_mode": "taqman",
+      "exon_junction": false
+    }
+  ]
+}

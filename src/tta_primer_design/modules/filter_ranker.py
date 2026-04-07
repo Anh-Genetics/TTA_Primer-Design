@@ -65,11 +65,16 @@ class FilterRanker:
 
         Returns:
             Top-N PrimerPair đã được lọc và xếp hạng.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("process chưa được implement (Sprint 4)")
+        if not primer_pairs:
+            return []
+        pairs = self.apply_hard_filters(primer_pairs)
+        logger.debug("After hard filters: %d/%d pairs remain", len(pairs), len(primer_pairs))
+        pairs = self.apply_soft_filters(pairs)
+        for pair in pairs:
+            pair.score = self.calculate_score(pair)
+        pairs = self.rank_pairs(pairs)
+        return self.get_top_n(pairs)
 
     def apply_hard_filters(self, pairs: list[PrimerPair]) -> list[PrimerPair]:
         """Áp dụng hard filters — loại bỏ các pair không đạt.
@@ -84,11 +89,20 @@ class FilterRanker:
 
         Returns:
             Danh sách sau khi loại bỏ các pair không đạt.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("apply_hard_filters chưa được implement (Sprint 4)")
+        filtered = []
+        for pair in pairs:
+            if (
+                pair.specificity_result is not None
+                and hasattr(pair.specificity_result, "off_target_amplicons")
+                and len(pair.specificity_result.off_target_amplicons)
+                > self.config.filters.max_off_targets
+            ):
+                continue
+            if any("FAIL" in flag for flag in pair.snp_flags):
+                continue
+            filtered.append(pair)
+        return filtered
 
     def apply_soft_filters(self, pairs: list[PrimerPair]) -> list[PrimerPair]:
         """Áp dụng soft filters — gán flag cảnh báo.
@@ -102,11 +116,17 @@ class FilterRanker:
 
         Returns:
             Danh sách với flags đã được gán.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("apply_soft_filters chưa được implement (Sprint 4)")
+        for pair in pairs:
+            if any(flag.startswith("SNP_") for flag in pair.snp_flags):
+                if "SNP_WARNING" not in pair.snp_flags:
+                    pair.snp_flags.append("SNP_WARNING")
+            for oligo in (pair.left_primer, pair.right_primer):
+                if oligo.hairpin_th > 20.0:
+                    flag = f"HAIRPIN_WARNING:{oligo.hairpin_th:.1f}C"
+                    if flag not in pair.snp_flags:
+                        pair.snp_flags.append(flag)
+        return pairs
 
     def calculate_score(self, pair: PrimerPair) -> float:
         """Tính điểm tổng hợp cho một PrimerPair (0–100).
@@ -116,11 +136,49 @@ class FilterRanker:
 
         Returns:
             Điểm tổng (0–100).
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("calculate_score chưa được implement (Sprint 4)")
+        score = 0.0
+
+        # Specificity (30 pts)
+        if pair.specificity_result is not None and hasattr(
+            pair.specificity_result, "specificity_score"
+        ):
+            score += _WEIGHTS["specificity"] * (pair.specificity_result.specificity_score / 100.0)
+        else:
+            score += _WEIGHTS["specificity"] * 0.5
+
+        # Thermodynamic (25 pts)
+        tm_diff = (abs(pair.left_primer.tm - 60.0) + abs(pair.right_primer.tm - 60.0)) / 2.0
+        tm_score = max(0.0, 1.0 - tm_diff / 5.0)
+        max_hairpin = max(pair.left_primer.hairpin_th, pair.right_primer.hairpin_th)
+        hairpin_score = max(0.0, 1.0 - max_hairpin / 45.0)
+        score += _WEIGHTS["thermodynamic"] * ((tm_score + hairpin_score) / 2.0)
+
+        # SNP-free (20 pts)
+        if not pair.snp_flags:
+            snp_score = 1.0
+        elif all("WARNING" in f for f in pair.snp_flags):
+            snp_score = 0.5
+        else:
+            snp_score = 0.0
+        score += _WEIGHTS["snp_free"] * snp_score
+
+        # Primer3 penalty inverse (15 pts)
+        penalty_score = max(0.0, 1.0 - pair.pair_penalty / 5.0)
+        score += _WEIGHTS["primer3_penalty"] * penalty_score
+
+        # Amplicon size (10 pts)
+        if pair.amplicon_size > 0:
+            if 70 <= pair.amplicon_size <= 200:
+                dist = abs(pair.amplicon_size - 125)
+                size_score = max(0.0, 1.0 - dist / 75.0)
+            else:
+                size_score = 0.0
+        else:
+            size_score = 0.5
+        score += _WEIGHTS["amplicon_size"] * size_score
+
+        return round(min(100.0, max(0.0, score)), 2)
 
     def rank_pairs(self, pairs: list[PrimerPair]) -> list[PrimerPair]:
         """Xếp hạng primer pairs theo score giảm dần.

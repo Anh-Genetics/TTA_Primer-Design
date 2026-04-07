@@ -68,6 +68,125 @@ tta-primer-design run \
 
 ---
 
+## Đánh giá cặp mồi sẵn có (`evaluate`)
+
+Lệnh `evaluate` cho phép bạn **kiểm tra chất lượng một cặp primer/probe đã có sẵn**
+mà không cần thiết kế lại. Nó thực hiện:
+
+1. **Đánh giá nhiệt động học** — Tm, GC%, ΔG hairpin, ΔG self-dimer, ΔG hetero-dimer,
+   GC clamp, repeat runs
+2. **Kiểm tra tính đặc hiệu BLAST** (tuỳ chọn, cần internet) — BLAST từng primer
+   lên NCBI, phát hiện off-target amplicon tiềm năng, tính specificity score
+3. **Điểm tổng hợp** — kết hợp nhiệt động học + specificity
+
+```bash
+tta-primer-design evaluate --help
+```
+
+### Ví dụ nhanh
+
+```bash
+# ① Chỉ đánh giá nhiệt động học (không cần internet, nhanh ~1s)
+tta-primer-design evaluate \
+    --left  GCAAGGAATGGTTTCAGAAATCCA \
+    --right CAGGACTCCATGTCGTCCA \
+    --skip-blast
+
+# ② Đánh giá đầy đủ kèm BLAST specificity (~1–2 phút)
+tta-primer-design evaluate \
+    --left  GCAAGGAATGGTTTCAGAAATCCA \
+    --right CAGGACTCCATGTCGTCCA \
+    --organism "Homo sapiens" \
+    --database nt
+
+# ③ TaqMan probe — có cả probe, lưu kết quả ra JSON
+tta-primer-design evaluate \
+    --left  GCAAGGAATGGTTTCAGAAATCCA \
+    --right CAGGACTCCATGTCGTCCA \
+    --probe TGCAGCCACACTTTCTACAATGAGC \
+    --name  ACTB_pair1 \
+    --output results/eval_ACTB.json
+
+# ④ BLAST bằng database refseq_rna, loài chuột
+tta-primer-design evaluate \
+    --left  ATGGAGAAAATCTGGCACCAC \
+    --right GGGGTGTTGAAGGTCTCAAA \
+    --organism "Mus musculus" \
+    --database refseq_rna
+```
+
+### Giải thích output
+
+```
+============================================================
+  TTA Primer Design — Evaluate Existing Primer Pair
+============================================================
+  Pair: ACTB_pair1
+
+─── THERMODYNAMICS ──────────────────────────────────────
+
+  Left  primer: GCAAGGAATGGTTTCAGAAATCCA
+    Tm             : 59.8 °C
+    GC%            : 41.7%
+    Hairpin ΔG     : -1.22 kcal/mol  ✅
+    Self-dimer ΔG  : -3.41 kcal/mol  ✅
+    3'-end ΔG      : -1.85 kcal/mol
+    GC Clamp       : ✅
+    Repeat runs    : ✅
+
+  Right primer: CAGGACTCCATGTCGTCCA
+    Tm             : 58.5 °C
+    GC%            : 57.9%
+    ...
+
+  Hetero-dimer ΔG  : -5.23 kcal/mol  ✅
+
+─── BLAST SPECIFICITY ───────────────────────────────────
+  Database : nt | Organism : Homo sapiens
+  ⏳ Đang chạy BLAST (30–120 giây)…
+
+  Left primer  :  12 hits  | perfect: 1  | 3'-mismatch: 4
+  Right primer :   8 hits  | perfect: 1  | 3'-mismatch: 3
+
+  Off-target amplicons : 0  ✅
+  Specificity score    : 100.0 / 100
+
+─── SUMMARY ─────────────────────────────────────────────
+
+  Overall Score : 78.3 / 100  →  ✅  PASS
+```
+
+### Tùy chọn lệnh
+
+| Tùy chọn | Ngắn | Mô tả | Mặc định |
+|----------|------|-------|---------|
+| `--left`  | `-l` | Chuỗi primer trái (bắt buộc) | — |
+| `--right` | `-r` | Chuỗi primer phải (bắt buộc) | — |
+| `--probe` | `-p` | Chuỗi TaqMan probe (tuỳ chọn) | — |
+| `--name`  | `-n` | Tên cặp mồi | `pair_001` |
+| `--organism` | — | Loài lọc BLAST | `Homo sapiens` |
+| `--database` | — | NCBI database: `nt`, `refseq_rna`, `refseq_genomic` | `nt` |
+| `--skip-blast` | — | Bỏ qua BLAST (chỉ nhiệt động học) | `False` |
+| `--output` | `-o` | Lưu kết quả ra file JSON | — |
+| `--config` | `-c` | File YAML config | — |
+| `--log-level` | — | Mức log: DEBUG/INFO/WARNING/ERROR | `WARNING` |
+
+### Ngưỡng tham chiếu
+
+| Thông số | Mức tốt | Cảnh báo ⚠️ |
+|----------|---------|------------|
+| Tm primer | 58–62 °C | < 55 °C hoặc > 65 °C |
+| Tm probe (TaqMan) | Tm_primer + 8–10 °C | — |
+| GC% | 40–60% | < 30% hoặc > 70% |
+| Hairpin ΔG | > −9 kcal/mol | ≤ −9 kcal/mol |
+| Self-dimer ΔG | > −9 kcal/mol | ≤ −9 kcal/mol |
+| Hetero-dimer ΔG | > −9 kcal/mol | ≤ −9 kcal/mol |
+| Off-target amplicons | 0 | ≥ 1 |
+| Specificity score | ≥ 80 | < 80 |
+| Overall score | ≥ 70 (PASS) | 50–70 (MARGINAL) hoặc < 50 (FAIL) |
+
+---
+
 ## Cấu trúc dự án
 
 ```
@@ -117,16 +236,16 @@ TTA_Primer-Design/
 | Module | Trạng thái | Mô tả |
 |--------|-----------|-------|
 | `input_parser.py`        | ✅ Implemented | Parse JSON/CSV/FASTA/TXT → List[DesignTarget] |
-| `sequence_fetcher.py`    | 🔲 Sprint 1   | Fetch sequence từ NCBI Entrez + cache |
-| `sequence_preprocessor.py` | 🔲 Sprint 2 | Mask repeats, validate, tính GC |
-| `primer3_runner.py`      | 🔲 Sprint 2   | Chạy primer3-py để thiết kế primer |
+| `sequence_fetcher.py`    | ✅ Implemented | Fetch sequence từ NCBI Entrez + cache |
+| `sequence_preprocessor.py` | ✅ Implemented | Validate, tính GC, mask low-complexity |
+| `primer3_runner.py`      | ✅ Implemented | Chạy primer3-py để thiết kế primer |
+| `thermodynamics.py`      | ✅ Implemented | Tính Tm, ΔG, GC clamp, repeat check |
+| `probe_designer.py`      | ✅ Implemented | Thiết kế TaqMan probe |
+| `filter_ranker.py`       | ✅ Implemented | Lọc và xếp hạng primer pairs (scoring 100 pts) |
+| `report_generator.py`    | ✅ Implemented | Xuất báo cáo CSV/Excel/JSON/FASTA/HTML |
+| `blast_specificity.py`   | ✅ Implemented | NCBI BLAST API + off-target amplicon detection |
 | `ncbi_primer_blast.py`   | 🔲 Sprint 3   | NCBI Primer-BLAST API (submit/poll/parse) |
-| `blast_specificity.py`   | 🔲 Sprint 3   | BLAST specificity check |
-| `probe_designer.py`      | 🔲 Sprint 3   | Thiết kế TaqMan probe |
 | `snp_checker.py`         | 🔲 Sprint 3   | Kiểm tra SNP từ dbSNP |
-| `thermodynamics.py`      | 🔲 Sprint 2   | Tính Tm, ΔG, GC clamp |
-| `filter_ranker.py`       | 🔲 Sprint 4   | Lọc và xếp hạng primer pairs |
-| `report_generator.py`    | 🔲 Sprint 4   | Xuất báo cáo CSV/Excel/JSON/HTML |
 
 ---
 

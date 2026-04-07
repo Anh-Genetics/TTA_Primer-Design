@@ -76,11 +76,77 @@ def run_pipeline(
     return results
 
 
-def _process_target(target, cfg: AppConfig) -> DesignResult:  # type: ignore[no-untyped-def]
-    """Xử lý một DesignTarget qua toàn bộ pipeline (stub).
+def _process_target(target, cfg: AppConfig) -> DesignResult:
+    """Xử lý một DesignTarget qua toàn bộ pipeline."""
+    from tta_primer_design.modules.filter_ranker import FilterRanker
+    from tta_primer_design.modules.primer3_runner import Primer3Runner
+    from tta_primer_design.modules.probe_designer import ProbeDesigner
+    from tta_primer_design.modules.sequence_fetcher import SequenceFetcher
+    from tta_primer_design.modules.sequence_preprocessor import SequencePreprocessor
 
-    Sẽ được implement đầy đủ khi các module sẵn sàng.
-    """
-    # Placeholder — trả về kết quả rỗng (chưa implement module)
-    logger.debug("Target '%s' processed (stub — no primers designed yet)", target.target_id)
-    return DesignResult(target=target, primer_pairs=[], status="success")
+    preprocessor = SequencePreprocessor(cfg)
+    primer3_runner = Primer3Runner(cfg)
+    filter_ranker = FilterRanker(cfg)
+
+    # Step 1: Get sequence
+    seq_input = None
+    if target.input_type == "sequence" and target.sequence:
+        seq_input = target.sequence
+    elif target.input_type in ("accession", "gene_name"):
+        fetcher = SequenceFetcher(cfg)
+        acc = target.accession or target.gene_name
+        try:
+            seq_input = fetcher.fetch_fasta(acc)
+        except Exception as exc:
+            logger.error("Failed to fetch sequence for '%s': %s", target.target_id, exc)
+            return DesignResult(target=target, status="failed", error=str(exc))
+
+    if seq_input is None:
+        return DesignResult(target=target, status="failed", error="No sequence available")
+
+    # Step 2: Preprocess
+    try:
+        processed_seq = preprocessor.process(seq_input, target)
+    except ValueError as exc:
+        return DesignResult(
+            target=target, status="failed", error=f"Sequence validation failed: {exc}"
+        )
+
+    # Step 3: Design primers
+    if cfg.pipeline.use_local_primer3:
+        try:
+            pairs = primer3_runner.run(processed_seq, target)
+        except Exception as exc:
+            logger.error("Primer3 failed for '%s': %s", target.target_id, exc)
+            return DesignResult(target=target, status="failed", error=str(exc))
+    else:
+        from tta_primer_design.modules.ncbi_primer_blast import NCBIPrimerBlast
+
+        api = NCBIPrimerBlast(cfg)
+        try:
+            pairs = api.design_primers(target, processed_seq)
+        except NotImplementedError:
+            logger.warning("NCBIPrimerBlast not implemented — falling back to local Primer3")
+            try:
+                pairs = primer3_runner.run(processed_seq, target)
+            except Exception as exc:
+                return DesignResult(target=target, status="failed", error=str(exc))
+        except Exception as exc:
+            return DesignResult(target=target, status="failed", error=str(exc))
+
+    if not pairs:
+        return DesignResult(target=target, primer_pairs=[], status="no_primers")
+
+    # Step 4: Design probes if mode requires it
+    if cfg.pipeline.mode in ("taqman", "qpcr"):
+        probe_designer = ProbeDesigner(cfg)
+        try:
+            pairs = probe_designer.design(pairs, processed_seq)
+        except Exception as exc:
+            logger.warning("Probe design failed for '%s': %s", target.target_id, exc)
+
+    # Step 5: Filter & rank
+    final_pairs = filter_ranker.process(pairs)
+
+    status = "success" if final_pairs else "no_primers"
+    return DesignResult(target=target, primer_pairs=final_pairs, status=status)

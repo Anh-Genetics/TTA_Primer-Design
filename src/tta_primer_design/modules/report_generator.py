@@ -108,11 +108,54 @@ class ReportGenerator:
 
         Returns:
             Đường dẫn file đã tạo.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("generate_csv chưa được implement (Sprint 4)")
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise ImportError("pandas is required for CSV generation") from exc
+        rows = []
+        for r in results:
+            for pair in r.primer_pairs:
+                rows.append(
+                    {
+                        "target_id": r.target.target_id,
+                        "pair_id": pair.pair_id,
+                        "status": r.status,
+                        "left_primer": pair.left_primer.sequence,
+                        "right_primer": pair.right_primer.sequence,
+                        "probe": pair.probe.sequence if pair.probe else "",
+                        "amplicon_size": pair.amplicon_size,
+                        "left_tm": round(pair.left_primer.tm, 2),
+                        "right_tm": round(pair.right_primer.tm, 2),
+                        "probe_tm": round(pair.probe.tm, 2) if pair.probe else "",
+                        "left_gc_pct": round(pair.left_primer.gc_percent, 2),
+                        "right_gc_pct": round(pair.right_primer.gc_percent, 2),
+                        "pair_penalty": round(pair.pair_penalty, 4),
+                        "score": round(pair.score, 2),
+                    }
+                )
+            if not r.primer_pairs:
+                rows.append(
+                    {
+                        "target_id": r.target.target_id,
+                        "pair_id": "",
+                        "status": r.status,
+                        "left_primer": "",
+                        "right_primer": "",
+                        "probe": "",
+                        "amplicon_size": "",
+                        "left_tm": "",
+                        "right_tm": "",
+                        "probe_tm": "",
+                        "left_gc_pct": "",
+                        "right_gc_pct": "",
+                        "pair_penalty": "",
+                        "score": "",
+                    }
+                )
+        df = pd.DataFrame(rows)
+        df.to_csv(output_path, index=False, encoding="utf-8")
+        return output_path
 
     def generate_excel(self, results: list[DesignResult], output_path: Path) -> Path:
         """Tạo Excel với nhiều sheet.
@@ -123,11 +166,75 @@ class ReportGenerator:
 
         Returns:
             Đường dẫn file đã tạo.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("generate_excel chưa được implement (Sprint 4)")
+        try:
+            from openpyxl import Workbook
+        except ImportError as exc:
+            raise ImportError("openpyxl is required for Excel generation") from exc
+
+        wb = Workbook()
+
+        # Sheet 1: Summary
+        ws_summary = wb.active
+        ws_summary.title = "Summary"
+        ws_summary.append(["target_id", "status", "num_pairs", "best_score"])
+        for r in results:
+            best_score = max((p.score for p in r.primer_pairs), default=0.0)
+            ws_summary.append([r.target.target_id, r.status, len(r.primer_pairs), best_score])
+
+        # Sheet 2: Primers
+        ws_primers = wb.create_sheet("Primers")
+        ws_primers.append(
+            [
+                "target_id",
+                "pair_id",
+                "left_primer",
+                "right_primer",
+                "amplicon_size",
+                "left_tm",
+                "right_tm",
+                "left_gc_pct",
+                "right_gc_pct",
+                "pair_penalty",
+                "score",
+            ]
+        )
+        for r in results:
+            for pair in r.primer_pairs:
+                ws_primers.append(
+                    [
+                        r.target.target_id,
+                        pair.pair_id,
+                        pair.left_primer.sequence,
+                        pair.right_primer.sequence,
+                        pair.amplicon_size,
+                        round(pair.left_primer.tm, 2),
+                        round(pair.right_primer.tm, 2),
+                        round(pair.left_primer.gc_percent, 2),
+                        round(pair.right_primer.gc_percent, 2),
+                        round(pair.pair_penalty, 4),
+                        round(pair.score, 2),
+                    ]
+                )
+
+        # Sheet 3: Probes
+        ws_probes = wb.create_sheet("Probes")
+        ws_probes.append(["target_id", "pair_id", "probe_sequence", "probe_tm", "probe_gc_pct"])
+        for r in results:
+            for pair in r.primer_pairs:
+                if pair.probe:
+                    ws_probes.append(
+                        [
+                            r.target.target_id,
+                            pair.pair_id,
+                            pair.probe.sequence,
+                            round(pair.probe.tm, 2),
+                            round(pair.probe.gc_percent, 2),
+                        ]
+                    )
+
+        wb.save(output_path)
+        return output_path
 
     def generate_json(self, results: list[DesignResult], output_path: Path) -> Path:
         """Tạo JSON đầy đủ.
@@ -161,11 +268,22 @@ class ReportGenerator:
 
         Returns:
             Đường dẫn file đã tạo.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("generate_fasta chưa được implement (Sprint 4)")
+        lines = []
+        for r in results:
+            for pair in r.primer_pairs:
+                lines.append(f">{pair.pair_id}_LEFT")
+                lines.append(pair.left_primer.sequence)
+                lines.append(f">{pair.pair_id}_RIGHT")
+                lines.append(pair.right_primer.sequence)
+                if pair.probe:
+                    lines.append(f">{pair.pair_id}_PROBE")
+                    lines.append(pair.probe.sequence)
+        with output_path.open("w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines))
+            if lines:
+                fh.write("\n")
+        return output_path
 
     def generate_html(self, results: list[DesignResult], output_path: Path) -> Path:
         """Tạo báo cáo HTML với Jinja2.
@@ -176,8 +294,55 @@ class ReportGenerator:
 
         Returns:
             Đường dẫn file đã tạo.
-
-        Raises:
-            NotImplementedError: Chưa implement (Sprint 4).
         """
-        raise NotImplementedError("generate_html chưa được implement (Sprint 4)")
+        try:
+            from jinja2 import Template
+        except ImportError as exc:
+            raise ImportError("jinja2 is required for HTML generation") from exc
+
+        _TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>TTA Primer Design Report</title>
+<style>
+body{font-family:sans-serif;margin:2em}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}
+th{background:#4a7ebf;color:#fff}
+tr:nth-child(even){background:#f2f2f2}
+h1{color:#2c3e50}
+.status-success{color:green} .status-failed{color:red} .status-no_primers{color:orange}
+</style>
+</head>
+<body>
+<h1>TTA Primer Design Report</h1>
+<p>Total targets: {{ results|length }}</p>
+{% for r in results %}
+<h2>Target: {{ r.target.target_id }} — <span class="status-{{ r.status }}">{{ r.status }}</span></h2>
+{% if r.primer_pairs %}
+<table>
+<tr><th>Pair ID</th><th>Left Primer</th><th>Right Primer</th><th>Probe</th>
+    <th>Amplicon (bp)</th><th>Left Tm</th><th>Right Tm</th><th>Score</th></tr>
+{% for pair in r.primer_pairs %}
+<tr>
+  <td>{{ pair.pair_id }}</td>
+  <td>{{ pair.left_primer.sequence }}</td>
+  <td>{{ pair.right_primer.sequence }}</td>
+  <td>{{ pair.probe.sequence if pair.probe else '' }}</td>
+  <td>{{ pair.amplicon_size }}</td>
+  <td>{{ '%.1f'|format(pair.left_primer.tm) }}</td>
+  <td>{{ '%.1f'|format(pair.right_primer.tm) }}</td>
+  <td>{{ '%.2f'|format(pair.score) }}</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p><em>No primer pairs found.</em></p>
+{% endif %}
+{% endfor %}
+</body></html>"""
+
+        template = Template(_TEMPLATE)
+        html = template.render(results=results)
+        with output_path.open("w", encoding="utf-8") as fh:
+            fh.write(html)
+        return output_path
